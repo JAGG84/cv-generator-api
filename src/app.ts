@@ -1,6 +1,11 @@
 import express from 'express';
 import { json } from 'body-parser';
 import cvRoutes from './routes/cvRoutes';
+import connectDB from './config/database';
+
+
+// Conecta a la base de datos
+connectDB();
 
 const app = express();
 app.use(json());
