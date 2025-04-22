@@ -1,11 +1,7 @@
-// src/controllers/cvController.ts
-import { Request, Response } from 'express';
-import { generatePDF } from '../services/pdfService';
+import { Request, Response, NextFunction } from 'express';
+import { pdfQueue } from '../services/queueService';
 
-export const generateCV = async (
-  req: Request,
-  res: Response
-): Promise<void> => {
+export const generateCV = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { name, email, phone, experience } = req.body;
 
@@ -14,13 +10,21 @@ export const generateCV = async (
       return;
     }
 
-    const pdf = await generatePDF({ name, email, phone, experience });
+    // Encolar el trabajo
+    await pdfQueue.add('generate-cv', {
+      name,
+      email,
+      phone,
+      experience,
+    });
 
-    res.contentType('application/pdf');
-    res.send(pdf); // ✅ única respuesta
+    res.status(202).json({
+      message: 'PDF generation queued successfully',
+      jobId: `cv-${Date.now()}`,
+    });
 
   } catch (error) {
-    console.error('Error generating PDF:', error);
-    res.status(500).json({ error: 'Failed to generate PDF' });
+    console.error('Error queuing PDF generation:', error);
+    res.status(500).json({ error: 'Failed to queue PDF generation' });
   }
 };
