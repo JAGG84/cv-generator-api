@@ -2,6 +2,7 @@ import { Queue, Worker } from 'bullmq';
 import IORedis from 'ioredis';
 import { generatePDF } from './pdfService';
 import dotenv from 'dotenv';
+import { s3 } from '../config/s3Client';
 
 dotenv.config();
 
@@ -24,18 +25,11 @@ export const pdfQueue = new Queue('pdf-generation', {
 });
 
 // Worker que procesa los jobs
-export const pdfWorker = new Worker(
-  'pdf-generation',
-  async (job) => {
-    const { data } = job;
-    const pdfBuffer = await generatePDF(data);
-    return pdfBuffer;
-  },
-  { connection: redisConnection }
-);
+let pdfWorker: Worker;
+export { pdfWorker };
 
 // Manejador de eventos (opcional)
-pdfWorker.on('completed', async (job, result) => {
+/*pdfWorker.on('completed', async (job, result) => {
   if (process.env.WEBHOOK_URL) {
     await fetch(process.env.WEBHOOK_URL, {
       method: 'POST',
@@ -47,4 +41,31 @@ pdfWorker.on('completed', async (job, result) => {
       }),
     });
   }
-});
+});*/
+pdfWorker = new Worker(
+  'pdf-generation',
+  async (job) => {
+    const { data } = job;
+    const pdfBuffer = await generatePDF(data);
+    
+    // Subir a S3
+    const fileName = `cv-${job.id}.pdf`;
+    await s3.upload({
+      Bucket: process.env.AWS_S3_BUCKET_NAME!,
+      Key: fileName,
+      Body: pdfBuffer,
+      ContentType: 'application/pdf',
+    }).promise();
+
+    return fileName; // Devuelve el nombre del archivo
+  },
+  { connection: redisConnection }
+);
+
+export async function getDownloadUrl(fileName: string, expiresIn = 3600): Promise<string> {
+  return s3.getSignedUrlPromise('getObject', {
+    Bucket: process.env.AWS_S3_BUCKET_NAME!,
+    Key: fileName,
+    Expires: expiresIn, // 1 hora de validez
+  });
+}
