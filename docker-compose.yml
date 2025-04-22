@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis
+    container_name: redis-cv-generator
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass "tu_password_redis"
+    volumes:
+      - redis_data:/data
+
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    volumes:
+      - ./localstack:/tmp/localstack
+
+volumes:
+  redis_data:
