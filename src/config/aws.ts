@@ -1,4 +1,4 @@
-import { S3 } from "aws-sdk";
+/*import { S3 } from "aws-sdk";
 
 export const s3Client = new S3({
   endpoint: process.env.AWS_ENDPOINT,  // LocalStack
@@ -8,4 +8,4 @@ export const s3Client = new S3({
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
   },
   region: process.env.AWS_REGION,
-});
+});*/
