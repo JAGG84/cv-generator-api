@@ -1,8 +1,12 @@
 import express from 'express';
 import { json } from 'body-parser';
+import cvRoutes from './routes/cvRoutes';
 
 const app = express();
 app.use(json());
+
+// Routes
+app.use('/api', cvRoutes); // Todos los endpoints de CV empezarán con /api
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -13,5 +17,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-export default app;

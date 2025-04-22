@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+/*import dotenv from 'dotenv';
 dotenv.config();
 
 export default {
@@ -18,4 +18,4 @@ export default {
     url: process.env.WEBHOOK_URL!,
     secret: process.env.WEBHOOK_SECRET!,
   },
-};
+};*/
