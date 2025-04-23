@@ -2,6 +2,7 @@ import express from 'express';
 import { json } from 'body-parser';
 import cvRoutes from './routes/cvRoutes';
 import connectDB from './config/database';
+import { swaggerUi, swaggerSpec } from './config/swagger';
 
 
 // Conecta a la base de datos
@@ -9,6 +10,11 @@ connectDB();
 
 const app = express();
 app.use(json());
+
+app.use('/api-docs', 
+    swaggerUi.serve, 
+    swaggerUi.setup(swaggerSpec)
+  );
 
 // Routes
 app.use('/api', cvRoutes); // Todos los endpoints de CV empezarán con /api
