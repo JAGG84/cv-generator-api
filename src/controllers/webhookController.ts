@@ -1,6 +1,20 @@
 import { Request, Response } from 'express';
 import { Webhook } from '../models/Webhook';
+import { WebhookAttempt } from '../models/WebgookAttempt';
 import crypto from 'crypto';
+
+export const getWebhookAttempts = async (req: Request, res: Response) => {
+    try {
+      const attempts = await WebhookAttempt.find({ webhookId: req.params.id })
+        .sort({ createdAt: -1 })
+        .limit(10);
+      
+      res.json(attempts);
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to fetch attempts' });
+    }
+  };
+  
 
 export const registerWebhook = async (req: Request, res: Response): Promise<void> => {
   try {
