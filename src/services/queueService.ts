@@ -3,9 +3,13 @@ import IORedis from 'ioredis';
 import { generatePDF } from './pdfService';
 import dotenv from 'dotenv';
 import { Webhook } from '../models/Webhook';
+import { WebhookAttempt } from '../models/WebgookAttempt';
 import crypto from 'crypto';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+const MAX_RETRIES = parseInt(process.env.WEBHOOK_MAX_RETRIES || '3');
+const RETRY_DELAY = parseInt(process.env.WEBHOOK_RETRY_DELAY_MS || '5000');
 
 dotenv.config();
 
@@ -35,6 +39,13 @@ const s3 = new S3Client({
 // Cola para generación de PDFs
 export const pdfQueue = new Queue('pdf-generation', {
   connection: redisConnection,
+  defaultJobOptions: {
+    attempts: MAX_RETRIES,
+    backoff: {
+      type: 'fixed',
+      delay: RETRY_DELAY
+    }
+  }
 });
 
 // Worker que procesa los jobs
@@ -81,26 +92,74 @@ pdfWorker.on('completed', async (job, fileName: string) => {
   const webhooks = await Webhook.find({ events: 'pdf_generated' });
   
   for (const webhook of webhooks) {
-    const payload = JSON.stringify({
-      event: 'pdf_generated',
-      jobId: job.id,
-      downloadUrl: await getDownloadUrl(fileName),
-      timestamp: new Date().toISOString(),
-    });
+    let attempt = 0;
+    let success = false;
+    
+    while (attempt < MAX_RETRIES && !success) {
+      attempt++;
+      try {
+        const attemptRecord = await WebhookAttempt.create({
+          webhookId: webhook._id,
+          jobId: job.id,
+          attemptCount: attempt
+        });
 
-    const signature = signPayload(payload, webhook.secret);
+        const payload = JSON.stringify({
+          event: 'pdf_generated',
+          jobId: job.id,
+          downloadUrl: await getDownloadUrl(fileName),
+          timestamp: new Date().toISOString()
+        });
 
-    try {
-      await fetch(webhook.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Signature': `sha256=${signature}`,
-        },
-        body: payload,
-      });
-    } catch (error) {
-      console.error(`Error notifying webhook ${webhook.url}:`, error);
+        const signature = crypto
+          .createHmac('sha256', webhook.secret)
+          .update(payload)
+          .digest('hex');
+
+        // Solución 1: Usar AbortController para timeout
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+
+        const response = await fetch(webhook.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Signature': `sha256=${signature}`,
+          },
+          body: payload,
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        await attemptRecord.updateOne({
+          status: 'success',
+          response: await response.text(),
+          lastAttemptAt: new Date()
+        });
+        
+        success = true;
+      } catch (error: unknown) { // Solución 2: Manejo correcto de unknown
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Attempt ${attempt} failed for webhook ${webhook.url}:`, errorMessage);
+        
+        if (attempt === MAX_RETRIES) {
+          await WebhookAttempt.updateOne(
+            { jobId: job.id, webhookId: webhook._id },
+            { 
+              status: 'failed',
+              response: errorMessage,
+              lastAttemptAt: new Date()
+            }
+          );
+        }
+        
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+        }
+      }
     }
   }
 });
